@@ -20,14 +20,13 @@ import clc
 
 class Disks(object):
 
-	def __init__(self,server,disks_lst):
+	def __init__(self, server, disks_lst, token=None):
+		self.token = token
 		self.server = server
-		self.disks = []
-		for disk in disks_lst:
-			self.disks.append(Disk(id=disk['id'],parent=self,disk_obj=disk))
+		self.disks = [Disk(id=disk['id'], parent=self, disk_obj=disk, token=self.token) for disk in disks_lst]
 
 
-	def Get(self,key):
+	def Get(self, key):
 		"""Get disk by providing mount point or ID
 
 		If key is not unique and finds multiple matches only the first
@@ -35,11 +34,11 @@ class Disks(object):
 		"""
 
 		for disk in self.disks:
-			if disk.id == key:  return(disk)
-			elif key in disk.partition_paths:  return(disk)
+			if disk.id == key or key in disk.partition_paths:
+				return(disk)
 
 
-	def Search(self,key):
+	def Search(self, key):
 		"""Search disk list by partial mount point or ID
 
 		"""
@@ -50,10 +49,10 @@ class Disks(object):
 			# TODO - search in list to match partial mount points
 			elif key.lower() in disk.partition_paths:  results.append(disk)
 
-		return(results)
+		return results
 
 
-	def Add(self,size,path=None,type="partitioned"):
+	def Add(self, size, path=None, type="partitioned"):
 		"""Add new disk.
 
 		This request will error if disk is protected and cannot be removed (e.g. a system disk)
@@ -68,34 +67,47 @@ class Disks(object):
 
 		"""
 
-		if type=="partitioned" and not path:  raise(clc.CLCException("Must specify path to mount new disk"))
+		if type=="partitioned" and not path:
+			raise clc.CLCException("Must specify path to mount new disk")
+
 		# TODO - Raise exception if too many disks
 		# TODO - Raise exception if too much total size (4TB standard, 1TB HS)
 
 		disk_set = [{'diskId': o.id, 'sizeGB': o.size} for o in self.disks]
 		disk_set.append({'sizeGB': size, 'type': type, 'path': path})
-		self.disks.append(Disk(id=int(time.time()),parent=self,disk_obj={'sizeGB': size,'partitionPaths': [path]}))
+		self.disks.append(Disk(
+			id=int(time.time()),
+			parent=self,
+			disk_obj={'sizeGB': size, 'partitionPaths': [path]},
+			token=self.token)
+		)
 
 		self.size = size
 		self.server.dirty = True
-		return(clc.v2.Requests(clc.v2.API.Call('PATCH','servers/%s/%s' % (self.server.alias,self.server.id),
-		                                       json.dumps([{"op": "set", "member": "disks", "value": disk_set}])),
-							   alias=self.server.alias))
-
+		return clc.v2.Requests(
+			clc.v2.API.Call(
+				'PATCH',
+				'servers/%s/%s' % (self.server.alias,self.server.id),
+				json.dumps([{"op": "set", "member": "disks", "value": disk_set}]),
+				token=self.token
+			),
+			alias=self.server.alias
+		)
 
 
 class Disk(object):
 
-	def __init__(self,id,parent,disk_obj=None):
+	def __init__(self, id, parent, disk_obj=None, token=None):
 		"""Create Disk object."""
 
 		self.id = id
 		self.parent = parent
 		self.size = disk_obj['sizeGB']
 		self.data = disk_obj
+		self.token = token
 
 
-	def Grow(self,size):
+	def Grow(self, size):
 		"""Grow disk to the newly specified size.
 
 		Size must be less than 1024 and must be greater than the current size.
@@ -105,18 +117,28 @@ class Disk(object):
 
 		"""
 
-		if size>1024:  raise(clc.CLCException("Cannot grow disk beyond 1024GB"))
-		if size<=self.size:  raise(clc.CLCException("New size must exceed current disk size"))
+		if size > 1024:
+			raise clc.CLCException("Cannot grow disk beyond 1024GB")
+
+		if size <= self.size:
+			raise clc.CLCException("New size must exceed current disk size")
+
 		# TODO - Raise exception if too much total size (4TB standard, 1TB HS)
 
-
-		disk_set = [{'diskId': o.id, 'sizeGB': o.size} for o in self.parent.disks if o!=self]
 		self.size = size
+		disk_set = [{'diskId': o.id, 'sizeGB': o.size} for o in self.parent.disks if o != self]
 		disk_set.append({'diskId': self.id, 'sizeGB': self.size})
 		self.parent.server.dirty = True
-		return(clc.v2.Requests(clc.v2.API.Call('PATCH','servers/%s/%s' % (self.parent.server.alias,self.parent.server.id),
-		                                       json.dumps([{"op": "set", "member": "disks", "value": disk_set}])),
-							   alias=self.parent.server.alias))
+
+		return clc.v2.Requests(
+			clc.v2.API.Call(
+				'PATCH',
+				'servers/%s/%s' % (self.parent.server.alias,self.parent.server.id),
+				json.dumps([{"op": "set", "member": "disks", "value": disk_set}]),
+				token=self.token
+			),
+			alias=self.parent.server.alias
+		)
 
 
 	def Delete(self):
@@ -132,18 +154,26 @@ class Disk(object):
 		disk_set = [{'diskId': o.id, 'sizeGB': o.size} for o in self.parent.disks if o!=self]
 		self.parent.disks = [o for o in self.parent.disks if o!=self]
 		self.parent.server.dirty = True
-		return(clc.v2.Requests(clc.v2.API.Call('PATCH','servers/%s/%s' % (self.parent.server.alias,self.parent.server.id),
-		                                       json.dumps([{"op": "set", "member": "disks", "value": disk_set}])),
-							   alias=self.parent.server.alias))
+
+		return clc.v2.Requests(
+			clc.v2.API.Call(
+				'PATCH',
+				'servers/%s/%s' % (self.parent.server.alias,self.parent.server.id),
+				json.dumps([{"op": "set", "member": "disks", "value": disk_set}]),
+				token=self.token
+			),
+			alias=self.parent.server.alias
+		)
 
 
 	def __getattr__(self,var):
-		key = re.sub("_(.)",lambda pat: pat.group(1).upper(),var)
+		key = re.sub("_(.)",lambda pat: pat.group(1).upper(), var)
 
-		if key in self.data:  return(self.data[key])
-		else:  raise(AttributeError("'%s' instance has no attribute '%s'" % (self.__class__.__name__,key)))
+		if key in self.data:
+			return self.data[key]
+
+		raise AttributeError("'%s' instance has no attribute '%s'" % (self.__class__.__name__, key))
 
 
 	def __str__(self):
-		return(self.id)
-
+		return self.id

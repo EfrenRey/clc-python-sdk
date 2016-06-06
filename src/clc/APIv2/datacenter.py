@@ -24,7 +24,7 @@ import clc
 class Datacenter:
 
 	@staticmethod
-	def Datacenters(alias=None):
+	def Datacenters(alias=None, token=None):
 		"""Return all cloud locations available to the calling alias.
 
 		>>> clc.v2.Datacenter.Datacenters(alias=None)
@@ -34,13 +34,13 @@ class Datacenter:
 		if not alias:  alias = clc.v2.Account.GetAlias()
 
 		datacenters = []
-		for r in clc.v2.API.Call('GET','datacenters/%s' % alias,{}):
-			datacenters.append(Datacenter(location=r['id'],name=r['name'],alias=alias))
+		for r in clc.v2.API.Call('GET','datacenters/%s' % alias, {}, token=self.token):
+			datacenters.append(Datacenter(location=r['id'], name=r['name'], alias=alias, token=self.token))
 
-		return(datacenters)
+		return datacenters
 
 
-	def __init__(self,location=None,name=None,alias=None):
+	def __init__(self, location=None, name=None, alias=None, token=None):
 		"""Create Datacenter object.
 
 		If parameters are populated then create object location.
@@ -51,24 +51,15 @@ class Datacenter:
 		"""
 
 		self.deployment_capabilities = None
+		self.token = token
+		self.alias = alias if alias else clc.v2.Account.GetAlias()
+		self.location = location if location else clc.v2.Account.GetLocation()
 
-		if alias:  self.alias = alias
-		else:  self.alias = clc.v2.Account.GetAlias()
-		if location:  self.location = location
-		else:  self.location = clc.v2.Account.GetLocation()
-
-		if False:
-			# prepopulated info
-			self.name = name
-			self.location = location
-			#self.servers = servers
-		else:
-			r = clc.v2.API.Call('GET','datacenters/%s/%s' % (self.alias,self.location),{'GroupLinks': 'true'})
-			self.name = r['name']
-			self.root_group_id = [obj['id'] for obj in r['links'] if obj['rel'] == "group"][0]
-			self.root_group_name = [obj['name'] for obj in r['links'] if obj['rel'] == "group"][0]
-
+		r = clc.v2.API.Call('GET', 'datacenters/%s/%s' % (self.alias, self.location), {'GroupLinks': 'true'}, token=self.token)
 		self.id = self.location
+		self.name = r['name']
+		self.root_group_id = [obj['id'] for obj in r['links'] if obj['rel'] == "group"][0]
+		self.root_group_name = [obj['name'] for obj in r['links'] if obj['rel'] == "group"][0]
 
 
 	def RootGroup(self):
@@ -81,7 +72,7 @@ class Datacenter:
 
 		"""
 
-		return(clc.v2.Group(id=self.root_group_id,alias=self.alias))
+		return clc.v2.Group(id=self.root_group_id, alias=self.alias, token=self.token)
 
 
 	def Groups(self):
@@ -93,32 +84,37 @@ class Datacenter:
 
 		"""
 
-		return(self.RootGroup().Subgroups())
+		return self.RootGroup().Subgroups()
 
 
-	def _DeploymentCapabilities(self,cached=True):
+	def _DeploymentCapabilities(self, cached=True):
 		if not self.deployment_capabilities or not cached:
-			self.deployment_capabilities = clc.v2.API.Call('GET','datacenters/%s/%s/deploymentCapabilities' % (self.alias,self.location))
+			self.deployment_capabilities = clc.v2.API.Call(
+				'GET',
+				'datacenters/%s/%s/deploymentCapabilities' % (self.alias, self.location),
+				token=self.token)
 
-		return(self.deployment_capabilities)
+		return self.deployment_capabilities
 
 
 	def Networks(self, forced_load=False):
 		if forced_load:
-			return(clc.v2.Networks(alias=self.alias, location=self.location))
+			return clc.v2.Networks(alias=self.alias, location=self.location, token=self.token)
 		else:
-			return(clc.v2.Networks(networks_lst=self._DeploymentCapabilities()['deployableNetworks']))
+			return clc.v2.Networks(networks_lst=self._DeploymentCapabilities()['deployableNetworks'], token=self.token)
 
 
 	def Templates(self):
-		return(clc.v2.Templates(templates_lst=self._DeploymentCapabilities()['templates']))
+		return clc.v2.Templates(templates_lst=self._DeploymentCapabilities()['templates'], token=self.token)
 
 
-	def __getattr__(self,var):
-		key = re.sub("_(.)",lambda pat: pat.group(1).upper(),var)
+	def __getattr__(self, var):
+		key = re.sub("_(.)", lambda pat: pat.group(1).upper(), var)
 
-		if key in ("supportsPremiumStorage","supportsSharedLoadBalancer"):  return(self._DeploymentCapabilities()[key])
-		else:  raise(AttributeError("'%s' instance has no attribute '%s'" % (self.__class__.__name__,var)))
+		if key in ("supportsPremiumStorage", "supportsSharedLoadBalancer"):
+			return self._DeploymentCapabilities()[key]
+
+		raise AttributeError("'%s' instance has no attribute '%s'" % (self.__class__.__name__,var))
 
 
 	def __str__(self):

@@ -83,7 +83,7 @@ class API():
 
 
 	@staticmethod
-	def Call(method,url,payload=None,session=None,debug=False):
+	def Call(method,url, payload=None, session=None, debug=False, token=None):
 		"""Execute v2 API call.
 
 		:param url: URL paths associated with the API call
@@ -91,7 +91,9 @@ class API():
 
 		:returns: decoded API json result
 		"""
-		if not clc._LOGIN_TOKEN_V2:  API._Login()
+		if token is None:
+			if not clc._LOGIN_TOKEN_V2:  API._Login()
+		    token = clc._LOGIN_TOKEN_V2
 
 		if session is None:
 		    session = clc._REQUESTS_SESSION
@@ -104,7 +106,7 @@ class API():
 		if url[0]=='/':  fq_url = "%s%s" % (clc.defaults.ENDPOINT_URL_V2,url)
 		else:  fq_url = "%s/v2/%s" % (clc.defaults.ENDPOINT_URL_V2,url)
 
-		session.headers.update({'Authorization': "Bearer %s" % clc._LOGIN_TOKEN_V2})
+		session.headers.update({'Authorization': "Bearer %s" % token})
 
 		if isinstance(payload, basestring):  session.headers['content-type'] = "Application/json" # added for server ops with str payload
 		else:  session.headers['content-type'] = "application/x-www-form-urlencoded"

@@ -32,7 +32,7 @@ import clc
 class Account:
 
 	@staticmethod
-	def GetAlias():  
+	def GetAlias():
 		"""Return specified alias or if none the alias associated with the provided credentials.
 
 		>>> clc.v2.Account.GetAlias()
@@ -53,7 +53,7 @@ class Account:
 		return(clc.LOCATION)
 
 
-	def __init__(self,alias=None):
+	def __init__(self,alias=None, token=None):
 		"""Create account object.
 
 		>>> clc.v2.Account()
@@ -64,7 +64,7 @@ class Account:
 		if alias:  self.alias = alias
 		else:  self.alias = clc.v2.Account.GetAlias()
 
-		self.data = clc.v2.API.Call('GET','accounts/%s' % (self.alias),{})
+		self.data = clc.v2.API.Call('GET', 'accounts/%s' % (self.alias), {} , token=token)
 
 
 	def ParentAccount(self):

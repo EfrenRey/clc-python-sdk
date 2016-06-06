@@ -33,32 +33,42 @@ import clc
 
 class Networks(object):
 
-	def __init__(self,alias=None,location=None,networks_lst=None):
-		if alias:  self.alias = alias
-		else:  self.alias = clc.v2.Account.GetAlias()
+	def __init__(self, alias=None, location=None, networks_lst=None, token=None):
+		self.token = token
+		self.alias = alias if alias else clc.v2.Account.GetAlias()
 
 		self.networks = []
 		if networks_lst:
 			for network in networks_lst:
-				self.networks.append(Network(id=network['networkId'],alias=network['accountID'],network_obj=network))
+				self.networks.append(Network(
+					id=network['networkId'],
+					alias=network['accountID'],
+					network_obj=network,
+					token=self.token)
+				)
 		elif location:
 			self._Load(location)
 		else:
-			raise(clc.CLCException("Networks object requires location or networks_lst"))
+			raise clc.CLCException("Networks object requires location or networks_lst")
 
 
-	def _Load(self,location):
+	def _Load(self, location):
 		"""Load all networks associated with the given location.
 
 		https://www.centurylinkcloud.com/api-docs/v2/#get-network-list#request
 		"""
 
 		# https://api.ctl.io/v2-experimental/networks/ALIAS/WA1
-		for network in clc.v2.API.Call('GET','/v2-experimental/networks/%s/%s' % (self.alias,location),{}):
-			self.networks.append(Network(id=network['id'],alias=self.alias,network_obj=network))
+		for network in clc.v2.API.Call('GET', '/v2-experimental/networks/%s/%s' % (self.alias,location), {}, token=self.token):
+			self.networks.append(Network(
+				id=network['id'],
+				alias=self.alias,
+				network_obj=network,
+				token=self.token)
+			)
 
 
-	def Get(self,key):
+	def Get(self, key):
 		"""Get network by providing name, ID, or other unique key.
 
 		If key is not unique and finds multiple matches only the first
@@ -66,14 +76,14 @@ class Networks(object):
 		"""
 
 		for network in self.networks:
-			if network.id == key:  return(network)
-			if network.name == key:  return(network)
-			if network.cidr == key:  return(network)
+			if network.id == key:  return network
+			if network.name == key:  return network
+			if network.cidr == key:  return network
 
 
 class Network(object):
 
-	def __init__(self,id,alias=None,network_obj=None):
+	def __init__(self, id, alias=None, network_obj=None, token=None):
 		"""Create Network object."""
 
 		self.id = id
@@ -81,19 +91,22 @@ class Network(object):
 		self.dirty = False
 		self.data = network_obj
 
-		if alias:  self.alias = alias
-		else:  self.alias = clc.v2.Account.GetAlias()
+		self.token = token
+		self.alias = alias if alias else clc.v2.Account.GetAlias()
 
-		if network_obj:  self.name = network_obj['name']
+		if network_obj:
+			self.name = network_obj['name']
 		else:
 			try:
 				self.Refresh()
 			except clc.APIFailedResponse as e:
-				if e.response_status_code==404:  raise(clc.CLCException("Network does not exist"))
-				else: raise(clc.CLCException("An error occurred while creating the Network object"))
+				if e.response_status_code==404:
+					raise clc.CLCException("Network does not exist")
+				else:
+					raise clc.CLCException("An error occurred while creating the Network object")
 
 	@staticmethod
-	def Create(alias=None,location=None):
+	def Create(alias=None, location=None, token=None):
 		"""Claims a new network within a given account.
 
 		https://www.ctl.io/api-docs/v2/#networks-claim-network
@@ -105,10 +118,14 @@ class Network(object):
 		if not location:  location = clc.v2.Account.GetLocation()
 
 		return clc.v2.Requests(
-			clc.v2.API.Call('POST','/v2-experimental/networks/%s/%s/claim' % (alias, location)),
-			alias=alias)
+			clc.v2.API.Call(
+				'POST',
+				'/v2-experimental/networks/%s/%s/claim' % (alias, location),
+				token=token),
+			alias=alias
+		)
 
-	def Delete(self,location=None):
+	def Delete(self, location=None):
 		"""Releases the calling network.
 
 		https://www.ctl.io/api-docs/v2/#networks-release-network
@@ -118,9 +135,12 @@ class Network(object):
 
 		if not location:  location = clc.v2.Account.GetLocation()
 
-		return clc.v2.API.Call('POST','/v2-experimental/networks/%s/%s/%s/release' % (self.alias, location, self.id))
+		return clc.v2.API.Call(
+			'POST',
+			'/v2-experimental/networks/%s/%s/%s/release' % (self.alias, location, self.id),
+			token=self.token=None)
 
-	def Update(self,name,description=None,location=None):
+	def Update(self, name, description=None, location=None):
 		"""Updates the attributes of a given Network via PUT.
 
 		https://www.ctl.io/api-docs/v2/#networks-update-network
@@ -138,7 +158,11 @@ class Network(object):
 		payload = {'name': name}
 		payload['description'] = description if description else self.description
 
-		r = clc.v2.API.Call('PUT','/v2-experimental/networks/%s/%s/%s' % (self.alias, location, self.id), payload)
+		r = clc.v2.API.Call(
+			'PUT',
+			'/v2-experimental/networks/%s/%s/%s' % (self.alias, location, self.id),
+			payload,
+			token=self.token)
 
 		self.name = self.data['name'] = name
 		if description: self.data['description'] = description
@@ -152,7 +176,10 @@ class Network(object):
 		"""
 		if not location:  location = clc.v2.Account.GetLocation()
 
-		new_object = clc.v2.API.Call('GET','/v2-experimental/networks/%s/%s/%s' % (self.alias,location,self.id))
+		new_object = clc.v2.API.Call(
+			'GET',
+			'/v2-experimental/networks/%s/%s/%s' % (self.alias,location,self.id),
+			token=self.token)
 
 		if new_object:
 			self.name = new_object['name']
@@ -162,9 +189,11 @@ class Network(object):
 	def __getattr__(self,var):
 		key = re.sub("_(.)",lambda pat: pat.group(1).upper(),var)
 
-		if key in self.data:  return(self.data[key])
-		else:  raise(AttributeError("'%s' instance has no attribute '%s'" % (self.__class__.__name__,key)))
+		if key in self.data:
+			return self.data[key]
+
+		raise AttributeError("'%s' instance has no attribute '%s'" % (self.__class__.__name__, key))
 
 
 	def __str__(self):
-		return(str(self.id))
+		return str(self.id)

@@ -52,17 +52,17 @@ import clc
 
 class Groups(object):
 
-	def __init__(self,groups_lst,alias=None):
+	def __init__(self, groups_lst, alias=None, token=None):
 
-		if alias:  self.alias = alias
-		else:  self.alias = clc.v2.Account.GetAlias()
+		self.token = token
+		self.alias = alias if alias else clc.v2.Account.GetAlias()
 
 		self.groups = []
 		for group in groups_lst:
-			self.groups.append(Group(id=group['id'],alias=self.alias,group_obj=group))
+			self.groups.append(Group(id=group['id'], alias=self.alias, group_obj=group, token=self.token))
 
 
-	def Get(self,key):
+	def Get(self, key):
 		"""Get group by providing name, ID, description or other unique key.
 
 		If key is not unique and finds multiple matches only the first
@@ -78,10 +78,10 @@ class Groups(object):
 			elif group.name.lower() == key.lower():  return(group)
 			elif group.description.lower() == key.lower():  return(group)
 
-		raise(clc.CLCException("Group not found"))	# No Match
+		raise clc.CLCException("Group not found")	# No Match
 
 
-	def Search(self,key):
+	def Search(self, key):
 		"""Search group list by providing partial name, ID, description or other key.
 
 		>>> clc.v2.Datacenter().Groups().Search("Default Group")
@@ -95,14 +95,14 @@ class Groups(object):
 			elif group.name.lower().find(key.lower()) != -1:  results.append(group)
 			elif group.description.lower().find(key.lower()) != -1:  results.append(group)
 
-		return(results)
+		return results
 
 
 
 class Group(object):
 
 	@staticmethod
-	def GetAll(root_group_id,alias=None):  
+	def GetAll(root_group_id, alias=None, token=None):  
 		"""Gets a list of groups within a given account.
 
 		>>> clc.v2.Group.GetAll("wa1-4416")
@@ -113,13 +113,13 @@ class Group(object):
 		if not alias:  alias = clc.v2.Account.GetAlias()
 
 		groups = []
-		for r in clc.v2.API.Call('GET','groups/%s/%s' % (alias,root_group_id),{})['groups']:
-			groups.append(Group(id=r['id'],alias=alias,group_obj=r))
+		for r in clc.v2.API.Call('GET', 'groups/%s/%s' % (alias,root_group_id), {}, token=token)['groups']:
+			groups.append(Group(id=r['id'], alias=alias, group_obj=r))
 		
-		return(groups)
+		return groups
 
 
-	def __init__(self,id,alias=None,group_obj=None):
+	def __init__(self,id, alias=None, group_obj=None, token=None):
 		"""Create Group object.
 
 		If parameters are populated then create object location.  
@@ -131,21 +131,21 @@ class Group(object):
 		"""
 
 		self.id = id
+		self.token = token
 
-		if alias:  self.alias = alias
-		else:  self.alias = clc.v2.Account.GetAlias()
+		self.alias = alias if alias else clc.v2.Account.GetAlias()
 
 		if group_obj:  self.data = group_obj
 		else:  self.Refresh()
 
 
-	def __getattr__(self,var):
-		key = re.sub("_(.)",lambda pat: pat.group(1).upper(),var)
+	def __getattr__(self, var):
+		key = re.sub("_(.)", lambda pat: pat.group(1).upper(), var)
 
-		if key in self.data:  return(self.data[key])
-		elif key in self.data['changeInfo']:  return(self.data['changeInfo'][key])
+		if key in self.data:  return self.data[key]
+		elif key in self.data['changeInfo']:  return self.data['changeInfo'][key]
 		elif key.lower() == 'description': return str()
-		else:  raise(AttributeError("'%s' instance has no attribute '%s'" % (self.__class__.__name__,key)))
+		else:  raise AttributeError("'%s' instance has no attribute '%s'" % (self.__class__.__name__, key))
 
 
 	def Refresh(self):
@@ -156,13 +156,13 @@ class Group(object):
 		"""
 
 		self.dirty = False
-		self.data = clc.v2.API.Call('GET','groups/%s/%s' % (self.alias,self.id))
+		self.data = clc.v2.API.Call('GET', 'groups/%s/%s' % (self.alias, self.id), token=self.token)
 
 		self.data['changeInfo']['createdDate'] = clc.v2.time_utils.ZuluTSToSeconds(self.data['changeInfo']['createdDate'])
 		self.data['changeInfo']['modifiedDate'] = clc.v2.time_utils.ZuluTSToSeconds(self.data['changeInfo']['modifiedDate'])
 
 
-	def Defaults(self,key):
+	def Defaults(self, key):
 		"""Returns default configurations for resources deployed to this group.
 
 		If specified key is not defined returns None.
@@ -172,11 +172,13 @@ class Group(object):
 		# "templateName":{"value":"WIN2012DTC-64","inherited":false}}
 		"""
 
-		if not hasattr(self,'defaults'):  self.defaults = clc.v2.API.Call('GET','groups/%s/%s/defaults' % (self.alias,self.id))
+		if not hasattr(self, 'defaults'):
+			self.defaults = clc.v2.API.Call('GET', 'groups/%s/%s/defaults' % (self.alias, self.id), token=self.token)
+
 		try:
-			return(self.defaults[key]['value'])
+			return self.defaults[key]['value']
 		except:
-			return(None)
+			return None
 		
 
 	def Subgroups(self):
@@ -187,7 +189,7 @@ class Group(object):
 
 		"""
 
-		return(Groups(alias=self.alias,groups_lst=self.data['groups']))
+		return Groups(alias=self.alias, groups_lst=self.data['groups'], token=self.token)
 
 
 	def Servers(self):
@@ -198,21 +200,25 @@ class Group(object):
 
 		"""
 
-		return(clc.v2.Servers(alias=self.alias,servers_lst=[obj['id'] for obj in self.data['links'] if obj['rel']=='server']))
+		return clc.v2.Servers(
+			alias=self.alias,
+			servers_lst=[obj['id'] for obj in self.data['links'] if obj['rel']=='server'],
+			token=self.token
+		)
 
 
-	def Archive(self):  return(self.Servers().Archive())
-	def Pause(self):  return(self.Servers().Pause())
-	def ShutDown(self):  return(self.Servers().ShutDown())
-	def Reboot(self):  return(self.Servers().Reboot())
-	def Reset(self):  return(self.Servers().Reset())
-	def PowerOn(self):  return(self.Servers().PowerOn())
-	def PowerOff(self):  return(self.Servers().PowerOff())
-	def StartMaintenance(self):  return(self.Servers().StartMaintenance())
-	def StopMaintenance(self):  return(self.Servers().StopMaintenance())
+	def Archive(self):  return self.Servers().Archive()
+	def Pause(self):  return self.Servers().Pause()
+	def ShutDown(self):  return self.Servers().ShutDown()
+	def Reboot(self):  return self.Servers().Reboot()
+	def Reset(self):  return self.Servers().Reset()
+	def PowerOn(self):  return self.Servers().PowerOn()
+	def PowerOff(self):  return self.Servers().PowerOff()
+	def StartMaintenance(self):  return self.Servers().StartMaintenance()
+	def StopMaintenance(self):  return self.Servers().StopMaintenance()
 
 
-	def Create(self,name,description=None):  
+	def Create(self, name, description=None):  
 		"""Creates a new group
 
 		>>> clc.v2.Datacenter(location="WA1").RootGroup().Create("Test3","Description3")
@@ -224,8 +230,14 @@ class Group(object):
 
 		if not description:  description = name
 
-		r = clc.v2.API.Call('POST','groups/%s' % (self.alias),{'name': name, 'description': description, 'parentGroupId': self.id})
-		return(Group(id=r['id'],alias=self.alias,group_obj=r))
+		r = clc.v2.API.Call(
+			'POST',
+			'groups/%s' % self.alias,
+			{'name': name, 'description': description, 'parentGroupId': self.id},
+			token=self.token
+		)
+
+		return Group(id=r['id'], alias=self.alias, group_obj=r, self.token)
 
 
 	def Update(self):
@@ -234,7 +246,7 @@ class Group(object):
 		*TODO* API not yet documented
 
 		"""
-		raise(Exception("Not implemented"))
+		raise Exception("Not implemented")
 
 
 	def Delete(self):
@@ -247,7 +259,14 @@ class Group(object):
 
 		"""
 
-		return(clc.v2.Requests(clc.v2.API.Call('DELETE','groups/%s/%s' % (self.alias,self.id),{}),alias=self.alias))
+		return clc.v2.Requests(
+			clc.v2.API.Call(
+				'DELETE',
+				'groups/%s/%s' % (self.alias, self.id),
+				{},
+				token=self.token),
+			alias=self.alias
+		)
 	
 
 	def Account(self):
@@ -260,9 +279,9 @@ class Group(object):
 		
 		"""
 
-		return(clc.v2.Account(alias=self.alias))
+		return clc.v2.Account(alias=self.alias)
 
 
 	def __str__(self):
-		return(self.data['name'])
+		return self.data['name']
 

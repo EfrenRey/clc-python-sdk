@@ -37,7 +37,7 @@ class Queue(object):
 
 class Requests(object):
 
-	def __init__(self,requests_lst,alias=None):
+	def __init__(self, requests_lst, alias=None):
 		"""Create Requests object.
 
 		Treats one or more requests as an atomic unit.

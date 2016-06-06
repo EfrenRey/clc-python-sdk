@@ -68,7 +68,7 @@ import clc
 
 class Servers(object):
 
-	def __init__(self,servers_lst,alias=None):
+	def __init__(self, servers_lst, alias=None, token=None):
 		"""Container class for one or more servers.
 
 		Behaves differently than the other container classes like Groups where the *_lst
@@ -80,13 +80,13 @@ class Servers(object):
 
 		"""
 
-		if alias:  self.alias = alias
-		else:  self.alias = clc.v2.Account.GetAlias()
+		self.token = token
+		self.alias = alias if alias else clc.v2.Account.GetAlias()
 
 		self.servers_lst = servers_lst
 
 
-	def Servers(self,cached=True):
+	def Servers(self, cached=True):
 		"""Returns list of server objects, populates if necessary.
 
 		>>> clc.v2.Servers(["NY1BTDIPHYP0101","NY1BTDIWEB0101"]).Servers()
@@ -99,17 +99,19 @@ class Servers(object):
 		if not hasattr(self,'_servers') or not cached:
 			self._servers = []
 			for server in self.servers_lst:
-				self._servers.append(Server(id=server,alias=self.alias))
+				self._servers.append(Server(id=server, alias=self.alias, token=self.token))
 
-		return(self._servers)
-
-
-	def __getattr__(self,key):
-		if key == 'servers':  return(self.Servers())
-		else:  raise(AttributeError("'%s' instance has no attribute '%s'" % (self.__class__.__name__,key)))
+		return self._servers
 
 
-	def _Operation(self,operation):
+	def __getattr__(self, key):
+		if key == 'servers':
+			return self.Servers()
+
+		raise AttributeError("'%s' instance has no attribute '%s'" % (self.__class__.__name__, key))
+
+
+	def _Operation(self, operation):
 		"""Execute specified operations task against one or more servers.
 
 		Returns a clc.v2.Requests object.  If error due to server(s) already being in
@@ -123,29 +125,36 @@ class Servers(object):
 		"""
 
 		try:
-			return(clc.v2.Requests(clc.v2.API.Call('POST','operations/%s/servers/%s' % (self.alias,operation),
-			                                       json.dumps(self.servers_lst)),alias=self.alias))
+			return clc.v2.Requests(
+				clc.v2.API.Call(
+					'POST',
+					'operations/%s/servers/%s' % (self.alias,operation),
+					json.dumps(self.servers_lst),
+					token=self.token
+				),
+			alias=self.alias)
+
 		except clc.APIFailedResponse as e:
 			# Most likely a queue add error presented as a 400.  Let Requests parse this
-			return(clc.v2.Requests(e.response_json,alias=self.alias))
+			return clc.v2.Requests(e.response_json, alias=self.alias)
 
 
-	def Archive(self):  return(self._Operation('archive'))
-	def Pause(self):  return(self._Operation('pause'))
-	def ShutDown(self):  return(self._Operation('shutDown'))
-	def Reboot(self):  return(self._Operation('reboot'))
-	def Reset(self):  return(self._Operation('reset'))
-	def PowerOn(self):  return(self._Operation('powerOn'))
-	def PowerOff(self):  return(self._Operation('powerOff'))
-	def StartMaintenance(self):  return(self._Operation('startMaintenance'))
-	def StopMaintenance(self):  return(self._Operation('stopMaintenance'))
+	def Archive(self):  return self._Operation('archive')
+	def Pause(self):  return self._Operation('pause')
+	def ShutDown(self):  return self._Operation('shutDown')
+	def Reboot(self):  return self._Operation('reboot')
+	def Reset(self):  return self._Operation('reset')
+	def PowerOn(self):  return self._Operation('powerOn')
+	def PowerOff(self):  return self._Operation('powerOff')
+	def StartMaintenance(self):  return self._Operation('startMaintenance')
+	def StopMaintenance(self):  return self._Operation('stopMaintenance')
 
 
 
 class Server(object):
 
 
-	def __init__(self,id,alias=None,server_obj=None):
+	def __init__(self, id, alias=None, server_obj=None, token=None):
 		"""Create Server object.
 
 		http://www.centurylinkcloud.com/api-docs/v2#servers-get-server
@@ -171,15 +180,17 @@ class Server(object):
 		self.public_ips = None
 		self.dirty = False
 
-		if alias:  self.alias = alias
-		else:  self.alias = clc.v2.Account.GetAlias()
+		self.token = token
+		self.alias = alias if alias else clc.v2.Account.GetAlias()
 
-		if server_obj:  self.data = server_obj
+		if server_obj:
+			self.data = server_obj
 		else:
 			try:
 				self.Refresh()
 			except clc.APIFailedResponse as e:
-				if e.response_status_code==404:  raise(clc.CLCException("Server does not exist"))
+				if e.response_status_code==404:
+					raise clc.CLCException("Server does not exist")
 
 
 	def Refresh(self):
@@ -190,7 +201,11 @@ class Server(object):
 		"""
 
 		self.dirty = False
-		self.data = clc.v2.API.Call('GET','servers/%s/%s' % (self.alias,self.id),{})
+		self.data = clc.v2.API.Call(
+			'GET',
+			'servers/%s/%s' % (self.alias,self.id),
+			{},
+			token=self.token)
 
 		try:
 			self.data['changeInfo']['createdDate'] = clc.v2.time_utils.ZuluTSToSeconds(self.data['changeInfo']['createdDate'])
@@ -202,21 +217,24 @@ class Server(object):
 			pass
 
 
-	def _Capabilities(self,cached=True):
+	def _Capabilities(self, cached=True):
 		if not self.capabilities or not cached:
-			self.capabilities = clc.v2.API.Call('GET','servers/%s/%s/capabilities' % (self.alias,self.name))
+			self.capabilities = clc.v2.API.Call(
+				'GET',
+				'servers/%s/%s/capabilities' % (self.alias, self.name),
+				token=self.token)
 
-		return(self.capabilities)
+		return self.capabilities
 
 
-	def __getattr__(self,var):
+	def __getattr__(self, var):
 		if var in ('memory','storage'):  key = var+'GB'
 		elif var == 'secondary_ip_addresses':  key = 'secondaryIPAddresses'
 		else:  key = re.sub("_(.)",lambda pat: pat.group(1).upper(),var)
 
-		if key in self.data:  return(self.data[key])
-		elif key in self.data['details']:  return(self.data['details'][key])
-		elif key in self.data['changeInfo']:  return(self.data['changeInfo'][key])
+		if key in self.data:  return self.data[key]
+		elif key in self.data['details']:  return self.data['details'][key]
+		elif key in self.data['changeInfo']:  return self.data['changeInfo'][key]
 		elif key in ("reservedDrivePaths", "addingCpuRequiresReboot", "addingMemoryRequiresReboot"):  return(self._Capabilities()[key])
 		else:  raise(AttributeError("'%s' instance has no attribute '%s'" % (self.__class__.__name__,key)))
 
@@ -231,7 +249,7 @@ class Server(object):
 
 		"""
 
-		return(clc.v2.Account(alias=self.alias))
+		return clc.v2.Account(alias=self.alias)
 
 
 	def Group(self):
@@ -244,7 +262,7 @@ class Server(object):
 
 		"""
 
-		return(clc.v2.Group(id=self.groupId,alias=self.alias))
+		return clc.v2.Group(id=self.groupId, alias=self.alias, token=self.token)
 
 
 	def Disks(self):
@@ -255,18 +273,20 @@ class Server(object):
 
 		"""
 
-		if not self.disks:  self.disks = clc.v2.Disks(server=self,disks_lst=self.data['details']['disks'])
+		if not self.disks:
+			self.disks = clc.v2.Disks(server=self, disks_lst=self.data['details']['disks'], token=self.token)
 
-		return(self.disks)
+		return self.disks
 
 
 	def PublicIPs(self):
 		"""Returns PublicIPs object associated with the server.
 
 		"""
-		if not self.public_ips:  self.public_ips = clc.v2.PublicIPs(server=self,public_ips_lst=self.ip_addresses)
+		if not self.public_ips:
+			self.public_ips = clc.v2.PublicIPs(server=self, public_ips_lst=self.ip_addresses, token=self.token)
 
-		return(self.public_ips)
+		return self.public_ips
 
 
 	def Alerts(self):
@@ -276,7 +296,7 @@ class Server(object):
 		<clc.APIv2.alert.Alerts object at 0x1065b0150>
 		"""
 
-		return(clc.v2.Alerts(self.alert_policies))
+		return clc.v2.Alerts(self.alert_policies)
 
 
 	def PriceUnits(self):
@@ -290,17 +310,16 @@ class Server(object):
 		"""
 
 		try:
-			units = clc.v2.API.Call('GET','billing/%s/serverPricing/%s' % (self.alias,self.name))
+			units = clc.v2.API.Call('GET', 'billing/%s/serverPricing/%s' % (self.alias,self.name), token=self.token)
 		except clc.APIFailedResponse:
-			raise(clc.ServerDeletedException)
+			raise clc.ServerDeletedException
 
-
-		return({
-				'cpu': units['cpu'],
-				'memory': units['memoryGB'],
-				'storage': units['storageGB'],
-				'managed_os': units['managedOS'],
-			})
+		return {
+			'cpu': units['cpu'],
+			'memory': units['memoryGB'],
+			'storage': units['storageGB'],
+			'managed_os': units['managedOS']
+		}
 
 
 	def PriceHourly(self):
@@ -315,7 +334,12 @@ class Server(object):
 
 		units = self.PriceUnits()
 
-		return(units['cpu']*self.cpu+units['memory']*self.memory+units['storage']*self.storage+units['managed_os'])
+		return (
+			units['cpu'] * self.cpu +
+			units['memory'] * self.memory +
+			units['storage'] * self.storage +
+			units['managed_os']
+		)
 
 
 	def Credentials(self):
@@ -326,10 +350,10 @@ class Server(object):
 
 		"""
 
-		return(clc.v2.API.Call('GET','servers/%s/%s/credentials' % (self.alias,self.name)))
+		return clc.v2.API.Call('GET', 'servers/%s/%s/credentials' % (self.alias, self.name), token=self.token)
 
 
-	def _Operation(self,operation):
+	def _Operation(self, operation):
 		"""Execute specified operations task against one or more servers.
 
 		Returns a clc.v2.Requests object.  If error due to server(s) already being in
@@ -340,21 +364,28 @@ class Server(object):
 		"""
 
 		try:
-			return(clc.v2.Requests(clc.v2.API.Call('POST','operations/%s/servers/%s' % (self.alias,operation),'["%s"]' % self.id),alias=self.alias))
+			return clc.v2.Requests(
+				clc.v2.API.Call(
+					'POST',
+					'operations/%s/servers/%s' % (self.alias,operation), '["%s"]' % self.id,
+					token=self.token
+				),
+				alias=self.alias)
+
 		except clc.APIFailedResponse as e:
 			# Most likely a queue add error presented as a 400.  Let Requests parse this
-			return(clc.v2.Requests(e.response_json,alias=self.alias))
+			return clc.v2.Requests(e.response_json, alias=self.alias)
 
 
-	def Archive(self):  return(self._Operation('archive'))
-	def Pause(self):  return(self._Operation('pause'))
-	def ShutDown(self):  return(self._Operation('shutDown'))
-	def Reboot(self):  return(self._Operation('reboot'))
-	def Reset(self):  return(self._Operation('reset'))
-	def PowerOn(self):  return(self._Operation('powerOn'))
-	def PowerOff(self):  return(self._Operation('powerOff'))
-	def StartMaintenance(self):  return(self._Operation('startMaintenance'))
-	def StopMaintenance(self):  return(self._Operation('stopMaintenance'))
+	def Archive(self):  return self._Operation('archive')
+	def Pause(self):  return self._Operation('pause')
+	def ShutDown(self):  return self._Operation('shutDown')
+	def Reboot(self):  return self._Operation('reboot')
+	def Reset(self):  return self._Operation('reset')
+	def PowerOn(self):  return self._Operation('powerOn')
+	def PowerOff(self):  return self._Operation('powerOff')
+	def StartMaintenance(self):  return self._Operation('startMaintenance')
+	def StopMaintenance(self):  return self._Operation('stopMaintenance')
 
 
 	def Restore(self):
@@ -370,7 +401,7 @@ class Server(object):
 
 
 
-	def ExecutePackage(self,package_id,parameters={}):
+	def ExecutePackage(self, package_id, parameters={}):
 		"""Execute an existing Bluerprint package on the server.
 
 		https://t3n.zendesk.com/entries/59727040-Execute-Package
@@ -385,12 +416,20 @@ class Server(object):
 
 		"""
 
-		return(clc.v2.Requests(clc.v2.API.Call('POST','operations/%s/servers/executePackage' % (self.alias),
-		                                       json.dumps({'servers': [self.id], 'package': {'packageId': package_id, 'parameters': parameters}})),
-							   alias=self.alias))
+		return clc.v2.Requests(
+			clc.v2.API.Call(
+				'POST',
+				'operations/%s/servers/executePackage' % (self.alias),
+				json.dumps({
+					'servers': [self.id],
+					'package': {'packageId': package_id, 'parameters': parameters}
+				}),
+				token=self.token
+			),
+			alias=self.alias)
 
 
-	def AddNIC(self,network_id,ip=''):
+	def AddNIC(self, network_id, ip=''):
 		"""Add a NIC from the provided network to server and, if provided,
 		   assign a provided IP address
 
@@ -412,11 +451,17 @@ class Server(object):
 
 		"""
 
-		return(clc.v2.Requests(clc.v2.API.Call('POST','servers/%s/%s/networks' % (self.alias,self.id),
-		                                       json.dumps({'networkId': network_id, 'ipAddress': ip})),
-							   alias=self.alias))
+		return clc.v2.Requests(
+			clc.v2.API.Call(
+				'POST',
+				'servers/%s/%s/networks' % (self.alias, self.id),
+				json.dumps({'networkId': network_id, 'ipAddress': ip}),
+				token=self.token
+			),
+			alias=self.alias)
 
-	def RemoveNIC(self,network_id):
+
+	def RemoveNIC(self, network_id):
 		"""Remove the NIC associated with the provided network from the server.
 
 		https://www.ctl.io/api-docs/v2/#servers-remove-secondary-network
